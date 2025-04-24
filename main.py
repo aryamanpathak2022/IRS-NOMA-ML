@@ -327,31 +327,33 @@ print(f"\nSimulation 2 time: {end_time_2 - start_time_2:.2f} seconds")
 # ==============================================================================
 
 # ==============================================================================
-# 3. Sum Rate vs IRS Elements (NOMA vs OMA) with Different Powers (Averaged)
+# 3. Sum Rate vs IRS Elements: NOMA (RL) vs OMA (Analytical) (Averaged)
 # ==============================================================================
 
-print("\nStarting Simulation 3: NOMA vs OMA Comparison (Averaged)...")
+print("\nStarting Simulation 3: NOMA (RL) vs OMA (Analytical) Comparison (Averaged)...")
 start_time_3 = time.time()
 
-# --- Simulation Section (Identical to before) ---
+# Data structures for NOMA (from RL) and OMA (analytical) results
 all_runs_noma_rates = {p_dbm: [] for p_dbm in powers}
-all_runs_oma_rates = {p_dbm: [] for p_dbm in powers}
+all_runs_oma_rates = {p_dbm: [] for p_dbm in powers} # Will store analytical results
 
 for run in range(num_runs):
     print(f"\n--- Run {run + 1} / {num_runs} --- (Plot 3)")
     run_noma_rates = {p_dbm: [] for p_dbm in powers}
-    run_oma_rates = {p_dbm: [] for p_dbm in powers}
+    run_oma_rates = {p_dbm: [] for p_dbm in powers} # Store analytical OMA per run
 
     for p_dbm in powers:
         p_linear = 10**(p_dbm / 10.0)
         print(f"  Power level: {p_dbm} dBm ({p_linear:.2f} linear)")
 
         element_rates_noma_this_power = []
-        element_rates_oma_this_power = []
+        element_rates_oma_this_power = [] # Store analytical OMA results
 
         for n in elements:
-            # --- NOMA Simulation ---
-            env_noma = IRSNOMAEnv(num_elements=n, signal_power=p_linear)
+            # --- NOMA Simulation (RL based - Keep as before) ---
+            # print(f"    NOMA (RL): Elements={n}") # Verbose
+            # Assuming IRSNOMAEnv uses num_users=num_users_for_comparison
+            env_noma = IRSNOMAEnv(num_elements=n, signal_power=p_linear, num_users=10)
             agent_noma = DQNAgent(env_noma.state_dim, env_noma.action_dim, **agent_params)
             state = env_noma.reset()
             total_reward_noma = 0
@@ -368,127 +370,94 @@ for run in range(num_runs):
             avg_noma = total_reward_noma / steps_noma if steps_noma > 0 else 0
             element_rates_noma_this_power.append(avg_noma)
 
-            # --- OMA Simulation ---
-            try:
-                # Make sure you are using the IRSOMAEnv version you intend
-                # (e.g., the one with reward scaled by 1/num_users if you want OMA < NOMA)
-                env_oma = IRSOMAEnv(num_elements=n, signal_power=p_linear)
-                agent_oma = DQNAgent(env_oma.state_dim, env_oma.action_dim, **agent_params)
-                state = env_oma.reset()
-                total_reward_oma = 0
-                steps_oma = 0
-                for i in range(fixed_iterations):
-                    action = agent_oma.select_action(state)
-                    next_state, reward, done = env_oma.step(action)
-                    agent_oma.store(state, action, reward, next_state, done)
-                    agent_oma.train()
-                    state = next_state
-                    total_reward_oma += reward
-                    steps_oma += 1
-                    if done: pass
-                avg_oma = total_reward_oma / steps_oma if steps_oma > 0 else 0
-                element_rates_oma_this_power.append(avg_oma)
-            except NameError:
-                 print("\n !!! WARNING: IRSOMAEnv class not defined. Skipping OMA simulation. !!! \n")
-                 element_rates_oma_this_power.append(np.nan)
+            # --- OMA Analytical Calculation ---
+            # print(f"    OMA (Analytical): Elements={n}") # Verbose
 
+            # Assume ideal gain (phase alignment) for baseline OMA comparison
+            gain_oma_analytical = 1.0
+            scaled_gain_oma_analytical = gain_oma_analytical * (n ** 2)
+            noise_oma = 1.0 # Consistent noise power
+            interference_oma = 0.0 # Definition of OMA
+
+            # Calculate the interference-free SNR for a single representative OMA user
+            snr_oma_analytical = (scaled_gain_oma_analytical * p_linear) / (interference_oma + noise_oma + 1e-10)
+
+            # Calculate Analytical OMA Sum Rate = log2(1 + SNR_single_user)
+            avg_oma_analytical = np.log2(1 + snr_oma_analytical)
+            element_rates_oma_this_power.append(avg_oma_analytical)
+            # --- End OMA Analytical Calculation ---
+
+        # Store results for this power level
         run_noma_rates[p_dbm] = element_rates_noma_this_power
         run_oma_rates[p_dbm] = element_rates_oma_this_power
 
+    # Append results for the whole run
     for p_dbm in powers:
         all_runs_noma_rates[p_dbm].append(run_noma_rates[p_dbm])
         all_runs_oma_rates[p_dbm].append(run_oma_rates[p_dbm])
 
-# --- Averaging Results Across Runs (Identical to before) ---
+# --- Averaging Results Across Runs ---
+# Averaging NOMA (RL results) smooths RL variance.
+# Averaging OMA (analytical results) will just return the deterministic analytical value,
+# but we keep the structure consistent.
 print("\n--- Averaging Results Across Runs (Plot 3) ---")
 final_avg_noma = {p_dbm: [] for p_dbm in powers}
 final_std_noma = {p_dbm: [] for p_dbm in powers}
 final_avg_oma = {p_dbm: [] for p_dbm in powers}
-final_std_oma = {p_dbm: [] for p_dbm in powers}
+final_std_oma = {p_dbm: [] for p_dbm in powers} # Will be ~zero for analytical OMA
 
 for p_dbm in powers:
     noma_rates_array = np.array(all_runs_noma_rates[p_dbm])
     final_avg_noma[p_dbm] = np.nanmean(noma_rates_array, axis=0).tolist()
     final_std_noma[p_dbm] = np.nanstd(noma_rates_array, axis=0).tolist()
-    oma_rates_array = np.array(all_runs_oma_rates[p_dbm])
+
+    oma_rates_array = np.array(all_runs_oma_rates[p_dbm]) # Contains identical rows
     final_avg_oma[p_dbm] = np.nanmean(oma_rates_array, axis=0).tolist()
-    final_std_oma[p_dbm] = np.nanstd(oma_rates_array, axis=0).tolist()
+    final_std_oma[p_dbm] = np.nanstd(oma_rates_array, axis=0).tolist() # Should be near zero
 
-end_time_3_sim = time.time()
-print(f"\nSimulation 3 (Sim part) time: {end_time_3_sim - start_time_3:.2f} seconds")
-
-# --- Plotting Averaged Results (Plot 3 - SEPARATE PLOTS) ---
-
-# --- Plot 1: NOMA ONLY ---
-print("\nPlotting Averaged Results (NOMA)...")
+# --- Plotting Averaged Results (Plot 3 - NOMA vs Analytical OMA) ---
+print("\nPlotting Averaged Results (Plot 3: NOMA (RL) vs OMA (Analytical))...")
 plt.figure(figsize=(10, 7))
 markers = ['o', 's', '^', 'd', 'v', '*']
+linestyles = ['-', '--', ':', '-.']
 colors = plt.cm.viridis(np.linspace(0, 1, len(powers)))
 
-for i, p_dbm in enumerate(powers):
-    color = colors[i]
-    marker = markers[i % len(markers)]
+# Check if any NOMA data is valid (should be unless sim failed)
+has_valid_noma = not all(all(np.isnan(val) for val in final_avg_noma[p_dbm]) for p_dbm in powers)
 
-    # Plot NOMA data
-    plt.plot(elements, final_avg_noma[p_dbm],
-             label=f"NOMA P={p_dbm}dBm", marker=marker,
-             linestyle='-', color=color, linewidth=2) # Solid line for NOMA
-    # Optional: Add shaded region for NOMA std dev
-    lower_noma = np.array(final_avg_noma[p_dbm]) - np.array(final_std_noma[p_dbm])
-    upper_noma = np.array(final_avg_noma[p_dbm]) + np.array(final_std_noma[p_dbm])
-    plt.fill_between(elements, lower_noma, upper_noma, alpha=0.15, color=color)
-
-plt.xlabel("Number of IRS Elements", fontsize=12)
-plt.ylabel("Average Sum Rate (bps/Hz)", fontsize=12)
-plt.title(f"Avg Sum Rate vs IRS Elements: NOMA (Averaged over {num_runs} runs)", fontsize=14)
-plt.legend(fontsize=10, loc='best')
-plt.grid(True, linestyle='--')
-plt.xticks(elements)
-plt.yticks(fontsize=10)
-plt.tight_layout()
-plt.show()
-
-
-# --- Plot 2: OMA ONLY ---
-print("\nPlotting Averaged Results (OMA)...")
-plt.figure(figsize=(10, 7)) # New figure for OMA
-
-# Check if any valid (non-NaN) OMA data exists after averaging
-has_valid_oma = not all(all(np.isnan(val) for val in final_avg_oma[p_dbm]) for p_dbm in powers)
-
-if has_valid_oma:
+if has_valid_noma: # Proceed only if NOMA results exist
     for i, p_dbm in enumerate(powers):
         color = colors[i]
         marker = markers[i % len(markers)]
 
-        # Plot OMA data only if valid for this power level
-        if not all(np.isnan(final_avg_oma[p_dbm])):
-             plt.plot(elements, final_avg_oma[p_dbm],
-                     label=f"OMA P={p_dbm}dBm", marker=marker,
-                     linestyle='--', color=color, linewidth=2) # Dashed line for OMA
-             # Optional: Add shaded region for OMA std dev
-             lower_oma = np.array(final_avg_oma[p_dbm]) - np.array(final_std_oma[p_dbm])
-             upper_oma = np.array(final_avg_oma[p_dbm]) + np.array(final_std_oma[p_dbm])
-             # Ensure fill_between handles potential NaNs if only some points failed
-             valid_oma_indices = ~np.isnan(final_avg_oma[p_dbm])
-             if np.any(valid_oma_indices):
-                  plt.fill_between(np.array(elements)[valid_oma_indices],
-                                   lower_oma[valid_oma_indices],
-                                   upper_oma[valid_oma_indices],
-                                   alpha=0.15, color=color)
+        # Plot NOMA (RL Results)
+        plt.plot(elements, final_avg_noma[p_dbm],
+                 label=f"NOMA (RL) P={p_dbm}dBm", marker=marker,
+                 linestyle=linestyles[1], color=color, linewidth=2)
+        lower_noma = np.array(final_avg_noma[p_dbm]) - np.array(final_std_noma[p_dbm])
+        upper_noma = np.array(final_avg_noma[p_dbm]) + np.array(final_std_noma[p_dbm])
+        plt.fill_between(elements, lower_noma, upper_noma, alpha=0.15, color=color)
+
+        # Plot OMA (Analytical Results)
+        plt.plot(elements, final_avg_oma[p_dbm],
+                 label=f"OMA (Analytical) P={p_dbm}dBm", marker=marker,
+                 linestyle=linestyles[0], color=color, linewidth=2) # Dashed line for OMA
+        # No shaded region for analytical OMA needed as std dev should be ~0
+
 
     plt.xlabel("Number of IRS Elements", fontsize=12)
     plt.ylabel("Average Sum Rate (bps/Hz)", fontsize=12)
-    plt.title(f"Avg Sum Rate vs IRS Elements: OMA (Averaged over {num_runs} runs)", fontsize=14)
-    plt.legend(fontsize=10, loc='best')
+    plt.title(f"Avg Sum Rate vs IRS Elements: NOMA (RL) vs OMA (Analytical) (NOMA Avg over {num_runs} runs)", fontsize=14)
+    plt.legend(fontsize=9, loc='best')
     plt.grid(True, linestyle='--')
     plt.xticks(elements)
     plt.yticks(fontsize=10)
     plt.tight_layout()
     plt.show()
 else:
-    print("Skipping OMA plot as no valid OMA data was found.")
+    print("Skipping plot as no valid NOMA data was found.")
 
 
 end_time_3_total = time.time()
+# Note: Simulation time only reflects NOMA RL part now
 print(f"\nSimulation 3 total time: {end_time_3_total - start_time_3:.2f} seconds")
