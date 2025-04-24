@@ -1,10 +1,11 @@
 import numpy as np
 
 class IRSOMAEnv:
-    def __init__(self, num_users=10, resolution_bits=5, signal_power=10):
+    def __init__(self, num_users=10, resolution_bits=5,num_elements=5, signal_power=10):
         self.num_users = num_users
         self.B = resolution_bits
         self.signal_power = signal_power  # store signal power
+        self.num_elements = num_elements
         self.phase_levels = 2 ** self.B
         self.state_dim = self.num_users * 2
         self.action_dim = self.phase_levels
@@ -27,4 +28,5 @@ class IRSOMAEnv:
     def _calculate_sinr(self, gain):
         interference = 0  # ideally zero in OMA
         noise = 1
-        return gain * self.signal_power / (interference + noise)
+        scaled_gain = gain * (self.num_elements ** 2)
+        return scaled_gain * self.signal_power / (interference + noise)
