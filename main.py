@@ -2,7 +2,7 @@ from LSTM.lstm_predictor import *
 from CLUSTERING.kgmm_clustering import *
 from DQN.agent import *
 from DQN.noma_env import *
-from DQN.oma_env import *
+
 import matplotlib.pyplot as plt
 
 # Step 1: Simulate
