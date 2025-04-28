@@ -1,6 +1,7 @@
 # IRS-NOMA-ML: Machine Learning for IRS-Assisted NOMA Systems
 
-This repository provides an end-to-end implementation of the paper **"[Paper Title]"**  
+This repository provides an end-to-end implementation of the paper **"Resource Allocation In IRSs Aided MISO-NOMA
+Networks: A Machine Learning Approach"**  
 We perform LSTM-based prediction, KGMM clustering, and analyze the system performance through multiple key plots.
 
 ---
